@@ -310,7 +310,7 @@ int main(int argc, char** argv){
 	int n;
 	char filename[1001];
 	sscanf(argv[1], "%d", &n);
-	sscanf(argv[2], "%s", &filename);
+	sscanf(argv[2], "%s", filename);
 
 	unsigned char *k = (unsigned char*) malloc(getsize(n));
 
