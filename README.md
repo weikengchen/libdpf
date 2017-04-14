@@ -16,3 +16,11 @@ AES-NI tools all from https://github.com/amaloz/libgarble.
 The project is inspired by the discussion with Frank Wang in https://github.com/frankw2/libfss, their construction is more general, rather than specifically PIR-purpose one-bit implementation. We also use their idea of fixed key (and public) cipher (with AES-NI) to accelarate and simplify the one-way function. For details, please check this paper in NSDI'17.
 
 Frank Wang, Catherine Yun, Shafi Goldwasser, Vinod Vaikuntanathan, and Matei Zaharia. "Splinter: Practical Private Queries on Public Data." NSDI 2017. https://www.usenix.org/system/files/conference/nsdi17/nsdi17-wang-frank.pdf
+
+## How to install
+
+Install cmake and libssl-dev. use "cmake ." to generate Makefile, and then make.
+
+Note that our implementation strongly requires AES-NI. Please check whether the Flags in /proc/cpuinfo indicated "aes".
+
+We consider the machine to be at least 64-bit.
