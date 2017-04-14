@@ -1,6 +1,6 @@
 # libdpf
 
-An unfinished library for Distributed Point Function. The construction is from "Function Secret Sharing: Improvements and Extensions" from Boyle et al. 
+A template for 2-server 1-bit Distributed Point Function. The construction is from "Function Secret Sharing: Improvements and Extensions" from Boyle et al. 
 
 Please following this link for original publication in CCS'16:
 https://cs.idc.ac.il/~elette/FSS-CCS.pdf
