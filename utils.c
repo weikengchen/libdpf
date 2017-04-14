@@ -220,6 +220,72 @@ block EVAL(AES_KEY *key, unsigned char* k, int x){
 	return res;
 }
 
+block* EVALFULL(AES_KEY *key, unsigned char* k){
+	int n = k[0];
+	int maxlayer = n - 7;
+	int maxlayeritem = 1 << (n - 7);
+
+	block s[2][maxlayeritem];
+	int t[2][maxlayeritem];
+
+	int curlayer = 1;
+
+	block sCW[maxlayer];
+	int tCW[maxlayer][2];
+	block finalblock;
+
+	memcpy(&s[0][0], &k[1], 16);
+	t[0][0] = k[17];
+
+	int i, j;
+	for(i = 1; i <= maxlayer; i++){
+		memcpy(&sCW[i-1], &k[18 * i], 16);
+		tCW[i-1][0] = k[18 * i + 16];
+		tCW[i-1][1] = k[18 * i + 17];
+	}
+
+	memcpy(&finalblock, &k[18 * (maxlayer + 1)], 16);
+
+	block sL, sR;
+	int tL, tR;
+	for(i = 1; i <= maxlayer; i++){
+		int itemnumber = 1 << (i - 1);
+		for(j = 0; j < itemnumber; j++){
+			PRG(key, s[1 - curlayer][j], &sL, &sR, &tL, &tR); 
+
+			if(t[1 - curlayer][j] == 1){
+				sL = dpf_xor(sL, sCW[i-1]);
+				sR = dpf_xor(sR, sCW[i-1]);
+				tL = tL ^ tCW[i-1][0];
+				tR = tR ^ tCW[i-1][1];	
+			}
+
+			s[curlayer][2 * j] = sL;
+			t[curlayer][2 * j] = tL;
+			s[curlayer][2 * j + 1] = sR; 
+			t[curlayer][2 * j + 1] = tR;
+		}
+		curlayer = 1 - curlayer;
+	}
+
+	int itemnumber = 1 << maxlayer;
+	block *res = (block*) malloc(sizeof(block) * itemnumber);
+
+	for(j = 0; j < itemnumber; j ++){
+		res[j] = s[1 - curlayer][j];
+
+		if(t[1 - curlayer][j] == 1){
+			res[j] = dpf_reverse_lsb(res[j]);
+		}
+
+		if(t[1 - curlayer][j] == 1){
+			res[j] = dpf_xor(res[j], finalblock);
+		}
+	}
+
+	return res;
+}
+
 int main(){
 	long long userkey1 = 597349; long long userkey2 = 121379; 
 	block userkey = dpf_make_block(userkey1, userkey2);
@@ -232,7 +298,7 @@ int main(){
 	unsigned char *k0;
 	unsigned char *k1;
 
-	GEN(&key, 0, 16, &k0, &k1);
+	GEN(&key, 26943, 16, &k0, &k1);
 	
 	block res1;
 	block res2;
@@ -248,5 +314,19 @@ int main(){
 	dpf_cb(res1);
 	dpf_cb(res2);
 	dpf_cb(dpf_xor(res1, res2));
+
+	block *resf0, *resf1;
+	resf0 = EVALFULL(&key, k0);
+	resf1 = EVALFULL(&key, k1);
+
+	int j;
+	for(j = 0; j < 512; j++){
+		printf("Group %d\n", j);
+
+		dpf_cb(resf0[j]);
+		dpf_cb(resf1[j]);
+		dpf_cb(dpf_xor(resf0[j], resf1[j]));
+	}
+
 	return 0;
 }
