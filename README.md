@@ -5,7 +5,7 @@ An unfinished library for Distributed Point Function. The construction is from "
 Please following this link for original publication in CCS'16:
 https://cs.idc.ac.il/~elette/FSS-CCS.pdf
 
-And the hompage of the first author Elette Boyle.
+And the homepage of the first author Elette Boyle.
 https://cs.idc.ac.il/~elette/
 
 
