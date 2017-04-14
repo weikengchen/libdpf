@@ -1,9 +1,18 @@
 # libdpf
 
-An unfinished library for Distributed Point Function. The construction is from "Function Secret Sharing: Improvements and Extensions" from Boyle et al.
+An unfinished library for Distributed Point Function. The construction is from "Function Secret Sharing: Improvements and Extensions" from Boyle et al. 
 
-We implement the early termination. The next step is full domain evaluation.
+Please following this link for original publication in CCS'16:
+https://cs.idc.ac.il/~elette/FSS-CCS.pdf
+
+And the hompage of the first author Elette Boyle.
+https://cs.idc.ac.il/~elette/
+
+
+We implement 2-party 1-bit DPF with early termination and full domain evaluation. The reason we only implement 1-bit is that such construction is already sufficient for PIR-read and/or PIR-write.
 
 AES-NI tools all from https://github.com/amaloz/libgarble.
 
-Inspired by the discussion with Frank Wang of https://github.com/frankw2/libfss, their construction is more general, rather than specifically PIR-purpose one-bit implementation.
+The project is inspired by the discussion with Frank Wang in https://github.com/frankw2/libfss, their construction is more general, rather than specifically PIR-purpose one-bit implementation. We also use their idea of fixed key (and public) cipher (with AES-NI) to accelarate and simplify the one-way function. For details, please check this paper in NSDI'17.
+
+Frank Wang, Catherine Yun, Shafi Goldwasser, Vinod Vaikuntanathan, and Matei Zaharia. "Splinter: Practical Private Queries on Public Data." NSDI 2017. https://www.usenix.org/system/files/conference/nsdi17/nsdi17-wang-frank.pdf
