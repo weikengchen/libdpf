@@ -77,3 +77,10 @@ void dpf_cb(block input) {
 	_output_bit_to_bit(val[1]);
 	printf("\n");
 }
+
+void dpf_cbnotnewline(block input) {
+    uint64_t *val = (uint64_t *) &input;
+
+	_output_bit_to_bit(val[0]);
+	_output_bit_to_bit(val[1]);
+}
