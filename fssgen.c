@@ -319,24 +319,13 @@ int main(int argc, char** argv){
 	GEN(&key, alpha, n, &k0, &k1);
 	int ksize = getsize(k0);
 
-	printf("k0:\n");
-	size_t koutputsize;
-	char* k0b64 = base64_encode(k0, ksize, &koutputsize);
-	k0b64[koutputsize] = 0;
-	printf("%s\n", k0b64);
-
-	/*FILE* testfp = fopen("/tmp/k0", "wb");
+	FILE* testfp = fopen("./k0", "wb");
 	fwrite(k0, ksize, 1, testfp);
-	fclose(testfp);*/
+	fclose(testfp);
 
-	printf("\nk1:\n");
-	char* k1b64 = base64_encode(k1, ksize, &koutputsize);
-	k1b64[koutputsize] = 0;
-	printf("%s\n", k1b64);
-
-	/*testfp = fopen("/tmp/k1", "wb");
+	testfp = fopen("./k1", "wb");
 	fwrite(k1, ksize, 1, testfp);
-	fclose(testfp);*/
+	fclose(testfp);
 
 	return 0;
 }
