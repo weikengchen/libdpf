@@ -5,10 +5,6 @@ A template for 2-server 1-bit Distributed Point Function. The construction is fr
 Please following this link for original publication in CCS'16:
 https://cs.idc.ac.il/~elette/FSS-CCS.pdf
 
-And the homepage of the first author Elette Boyle.
-https://cs.idc.ac.il/~elette/
-
-
 We implement 2-party 1-bit DPF with early termination and full domain evaluation. The reason we only implement 1-bit is that such construction is already sufficient for PIR-read and/or PIR-write.
 
 AES-NI tools all from https://github.com/amaloz/libgarble.
