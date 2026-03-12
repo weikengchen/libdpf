@@ -29,6 +29,48 @@ make
 ./fss  # Run self-test
 ```
 
+## Usage as Rust Dependency
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+libdpf = { git = "https://github.com/weikengchen/libdpf.git" }
+```
+
+Or to use a specific branch:
+
+```toml
+[dependencies]
+libdpf = { git = "https://github.com/weikengchen/libdpf.git", branch = "main" }
+```
+
+## Usage as TypeScript/JavaScript Dependency
+
+Add this to your `package.json`:
+
+```json
+{
+  "dependencies": {
+    "libdpf": "github:weikengchen/libdpf#main"
+  }
+}
+```
+
+Or with npm:
+
+```bash
+npm install weikengchen/libdpf
+```
+
+Or with yarn:
+
+```bash
+yarn add weikengchen/libdpf
+```
+
+The TypeScript package will be automatically built from `libdpf-ts/` during installation.
+
 ## References
 
 - Boyle et al. "Function Secret Sharing: Improvements and Extensions" CCS'16
