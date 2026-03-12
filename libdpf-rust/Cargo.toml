@@ -1,0 +1,30 @@
+[package]
+name = "libdpf"
+version = "0.1.0"
+edition = "2021"
+description = "Distributed Point Function (DPF) library - Rust implementation"
+license = "MIT"
+keywords = ["cryptography", "dpf", "fss", "pir", "privacy"]
+categories = ["cryptography", "algorithms"]
+
+[dependencies]
+aes = "0.8"
+cipher = "0.4"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["derive"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+simd = []
+
+[[bench]]
+name = "dpf_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

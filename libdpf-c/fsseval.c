@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "aes.h"
 #include "block.h"
@@ -286,7 +287,14 @@ block* EVALFULL(AES_KEY *key, unsigned char* k){
 	return res;
 }
 
-int main(){
+int getsize(int n){
+	int maxlayer = n - 7;
+
+	return (18 * (maxlayer + 1) + 16);
+}
+
+
+int main(int argc, char** argv){
 	long long userkey1 = 597349; long long userkey2 = 121379; 
 	block userkey = dpf_make_block(userkey1, userkey2);
 
@@ -295,37 +303,40 @@ int main(){
 	AES_KEY key;
 	AES_set_encrypt_key(userkey, &key);
 
-	unsigned char *k0;
-	unsigned char *k1;
+	if(argc != 3){
+		printf("format: fsseval N filename\n");
+		exit(0);
+	}
 
-	GEN(&key, 26943, 16, &k0, &k1);
-	
-	block res1;
-	block res2;
+	int n;
+	char filename[1001];
+	sscanf(argv[1], "%d", &n);
+	sscanf(argv[2], "%s", filename);
 
-	res1 = EVAL(&key, k0, 0);
-	res2 = EVAL(&key, k1, 0);
-	dpf_cb(res1);
-	dpf_cb(res2);
-	dpf_cb(dpf_xor(res1, res2));
+	unsigned char *k = (unsigned char*) malloc(getsize(n));
 
-	res1 = EVAL(&key, k0, 128);
-	res2 = EVAL(&key, k1, 128);
-	dpf_cb(res1);
-	dpf_cb(res2);
-	dpf_cb(dpf_xor(res1, res2));
+	if(k == NULL){
+		printf("Failed to allocate a memory space.\n");
+		exit(0);
+	}
 
-	block *resf0, *resf1;
-	resf0 = EVALFULL(&key, k0);
-	resf1 = EVALFULL(&key, k1);
+	FILE *fp = fopen(filename, "rb");
+
+	if(fp == NULL){
+		printf("Failed to open the file.\n");
+		exit(0);
+	}
+
+	fread(k, getsize(n), 1, fp);
+	fclose(fp);
+
+	block *resf;
+	resf = EVALFULL(&key, k);
 
 	int j;
-	for(j = 0; j < 512; j++){
-		printf("Group %d\n", j);
-
-		dpf_cb(resf0[j]);
-		dpf_cb(resf1[j]);
-		dpf_cb(dpf_xor(resf0[j], resf1[j]));
+	int totalblocknumber = (1 << n) / 128;
+	for(j = 0; j < totalblocknumber; j++){
+		dpf_cbnotnewline(resf[j]);
 	}
 
 	return 0;

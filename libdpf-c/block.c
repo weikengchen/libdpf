@@ -36,10 +36,10 @@ dpf_random_block(void)
     out = dpf_zero_block();
     val = (uint64_t *) &out;
     val[0] = current_rand_index++;
-    out = _mm_xor_si128(out, rand_aes_key.rd_key[0]);
-    for (i = 1; i < 10; ++i)
-        out = _mm_aesenc_si128(out, rand_aes_key.rd_key[i]);
-    return _mm_aesenclast_si128(out, rand_aes_key.rd_key[i]);
+    
+    /* Use the platform-agnostic AES encryption function */
+    AES_ecb_encrypt_blks(&out, 1, &rand_aes_key);
+    return out;
 }
 
 block *

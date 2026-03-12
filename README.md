@@ -2,21 +2,38 @@
 
 A template for 2-server 1-bit Distributed Point Function. The construction is from "Function Secret Sharing: Improvements and Extensions" from Boyle et al. 
 
-Please following this link for original publication in CCS'16:
-https://cs.idc.ac.il/~elette/FSS-CCS.pdf
+Paper: https://cs.idc.ac.il/~elette/FSS-CCS.pdf
 
-We implement 2-party 1-bit DPF with early termination and full domain evaluation. The reason we only implement 1-bit is that such construction is already sufficient for PIR-read and/or PIR-write.
+## Implementations
 
-AES-NI tools all from https://github.com/amaloz/libgarble.
+| Directory | Language | Description |
+|-----------|----------|-------------|
+| `libdpf-c/` | C | Native implementation with hardware-accelerated AES (x86_64 & ARM64) |
+| `libdpf-rust/` | Rust | Rust implementation |
+| `libdpf-ts/` | TypeScript | TypeScript implementation |
 
-The project is inspired by the discussion with Frank Wang in https://github.com/frankw2/libfss, their construction is more general, rather than specifically PIR-purpose one-bit implementation. We also use their idea of fixed key (and public) cipher (with AES-NI) to accelarate and simplify the one-way function. For details, please check this paper in NSDI'17.
+## Supported Platforms (C Implementation)
 
-Frank Wang, Catherine Yun, Shafi Goldwasser, Vinod Vaikuntanathan, and Matei Zaharia. "Splinter: Practical Private Queries on Public Data." NSDI 2017. https://www.usenix.org/system/files/conference/nsdi17/nsdi17-wang-frank.pdf
+The C implementation supports hardware-accelerated AES on:
 
-## How to install
+- **x86_64/x64**: Uses Intel AES-NI instructions
+- **ARM64/Apple Silicon**: Uses ARMv8-A Cryptographic Extension (NEON AES instructions)
 
-Install cmake and libssl-dev. use "cmake ." to generate Makefile, and then make.
+## Quick Start
 
-Note that our implementation strongly requires AES-NI. Please check whether the Flags in /proc/cpuinfo indicated "aes".
+```bash
+cd libdpf-c
+mkdir build && cd build
+cmake ..
+make
+./fss  # Run self-test
+```
 
-We consider the machine to be at least 64-bit.
+## References
+
+- Boyle et al. "Function Secret Sharing: Improvements and Extensions" CCS'16
+- Frank Wang et al. "Splinter: Practical Private Queries on Public Data" NSDI'17
+
+## License
+
+OpenSSL-compatible licensing. See individual files for details.
