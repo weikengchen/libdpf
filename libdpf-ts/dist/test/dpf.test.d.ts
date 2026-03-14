@@ -1,4 +1,4 @@
 /**
  * Tests for DPF implementation
  */
-export declare function runTests(): void;
+export declare function runTests(): Promise<void>;

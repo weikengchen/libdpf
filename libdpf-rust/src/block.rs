@@ -3,13 +3,14 @@
 //! This module provides efficient 128-bit block operations using native integer types.
 //! On platforms with SIMD support, operations can be further optimized.
 
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 /// A 128-bit block represented as two 64-bit integers.
 /// 
 /// Memory layout: `[low, high]` where `low` is bits 0-63 and `high` is bits 64-127.
 /// This matches the little-endian representation used in the original C implementation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Zeroize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Zeroize, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Block {
     pub low: u64,

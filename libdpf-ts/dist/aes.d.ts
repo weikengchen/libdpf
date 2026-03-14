@@ -1,17 +1,21 @@
 /**
- * AES-128 encryption wrapper using Node.js crypto module
+ * AES-128 encryption wrapper with browser and Node.js support
  *
  * Provides AES-128 encryption for the DPF PRG construction.
+ * Uses Web Crypto API in browsers, Node.js crypto module as fallback.
  */
 import { Block } from './block';
-/** AES-128 key wrapper */
+/** AES-128 key wrapper with async encryption */
 export declare class AesKey {
-    private key;
+    private keyBytes;
+    private nodeCrypto;
     constructor(keyBlock: Block);
-    /** Encrypt a single block in-place (returns new block) */
-    encryptBlock(block: Block): Block;
+    /** Get or create a Web Crypto key for this AES key */
+    private getWebCryptoKey;
+    /** Encrypt a single block (returns new block) */
+    encryptBlock(block: Block): Promise<Block>;
     /** Encrypt two blocks */
-    encryptTwoBlocks(block0: Block, block1: Block): [Block, Block];
+    encryptTwoBlocks(block0: Block, block1: Block): Promise<[Block, Block]>;
 }
 /** PRG (Pseudorandom Generator) for DPF */
 export declare class Prg {
@@ -23,5 +27,5 @@ export declare class Prg {
      * @param input - The seed block (LSB will be zeroed before use)
      * @returns [output1, output2, bit1, bit2] - Two output blocks and two control bits
      */
-    generate(input: Block): [Block, Block, number, number];
+    generate(input: Block): Promise<[Block, Block, number, number]>;
 }

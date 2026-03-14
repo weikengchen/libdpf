@@ -92,10 +92,10 @@ function testBlockBytesRoundtrip(): void {
     console.log("  ✓ testBlockBytesRoundtrip passed");
 }
 
-// Test DPF operations
-function testGenBasic(): void {
+// Test DPF operations (now async)
+async function testGenBasic(): Promise<void> {
     const dpf = Dpf.withDefaultKey();
-    const [k0, k1] = dpf.gen(26943, 16);
+    const [k0, k1] = await dpf.gen(26943, 16);
 
     assertEqual(k0.n, 16, "k0.n should be 16");
     assertEqual(k1.n, 16, "k1.n should be 16");
@@ -104,28 +104,28 @@ function testGenBasic(): void {
     console.log("  ✓ testGenBasic passed");
 }
 
-function testEvalXorProperty(): void {
+async function testEvalXorProperty(): Promise<void> {
     const dpf = Dpf.withDefaultKey();
     const alpha = 26943;
     const n = 16;
 
-    const [k0, k1] = dpf.gen(alpha, n);
+    const [k0, k1] = await dpf.gen(alpha, n);
 
     // Evaluate at alpha - should get non-zero result when XOR'd
-    const r0 = dpf.eval(k0, alpha);
-    const r1 = dpf.eval(k1, alpha);
+    const r0 = await dpf.eval(k0, alpha);
+    const r1 = await dpf.eval(k1, alpha);
     const xorResult = r0.xor(r1);
 
     assertBlockNotZero(xorResult, "XOR at alpha should be non-zero");
     console.log("  ✓ testEvalXorProperty passed");
 }
 
-function testEvalZeroAtOtherPoints(): void {
+async function testEvalZeroAtOtherPoints(): Promise<void> {
     const dpf = Dpf.withDefaultKey();
     const alpha = 26943;
     const n = 16;
 
-    const [k0, k1] = dpf.gen(alpha, n);
+    const [k0, k1] = await dpf.gen(alpha, n);
 
     // Evaluate at different points - should get zero when XOR'd
     const alphaBlock = Math.floor(alpha / 128);
@@ -134,8 +134,8 @@ function testEvalZeroAtOtherPoints(): void {
     for (const x of testPoints) {
         const xBlock = Math.floor(x / 128);
         if (xBlock !== alphaBlock) {
-            const r0 = dpf.eval(k0, x);
-            const r1 = dpf.eval(k1, x);
+            const r0 = await dpf.eval(k0, x);
+            const r1 = await dpf.eval(k1, x);
             const xorResult = r0.xor(r1);
             assertBlockZero(xorResult, `XOR at x=${x} (block ${xBlock}) with alpha=${alpha} (block ${alphaBlock}) should be zero`);
         }
@@ -143,15 +143,15 @@ function testEvalZeroAtOtherPoints(): void {
     console.log("  ✓ testEvalZeroAtOtherPoints passed");
 }
 
-function testEvalFull(): void {
+async function testEvalFull(): Promise<void> {
     const dpf = Dpf.withDefaultKey();
     const alpha = 26943;
     const n = 16;
 
-    const [k0, k1] = dpf.gen(alpha, n);
+    const [k0, k1] = await dpf.gen(alpha, n);
 
-    const res0 = dpf.evalFull(k0);
-    const res1 = dpf.evalFull(k1);
+    const res0 = await dpf.evalFull(k0);
+    const res1 = await dpf.evalFull(k1);
 
     const expectedLen = 1 << (n - 7);
     assertEqual(res0.length, expectedLen, "evalFull result length mismatch for k0");
@@ -172,12 +172,12 @@ function testEvalFull(): void {
     console.log("  ✓ testEvalFull passed");
 }
 
-function testKeySerialization(): void {
+async function testKeySerialization(): Promise<void> {
     const dpf = Dpf.withDefaultKey();
     const alpha = 12345;
     const n = 16;
 
-    const [k0, k1] = dpf.gen(alpha, n);
+    const [k0, k1] = await dpf.gen(alpha, n);
 
     // Serialize and deserialize
     const k0Bytes = k0.toBytes();
@@ -187,10 +187,10 @@ function testKeySerialization(): void {
 
     // Evaluations should match
     for (const x of [0, alpha, 50000]) {
-        const r0Orig = dpf.eval(k0, x);
-        const r0Rest = dpf.eval(k0Restored, x);
-        const r1Orig = dpf.eval(k1, x);
-        const r1Rest = dpf.eval(k1Restored, x);
+        const r0Orig = await dpf.eval(k0, x);
+        const r0Rest = await dpf.eval(k0Restored, x);
+        const r1Orig = await dpf.eval(k1, x);
+        const r1Rest = await dpf.eval(k1Restored, x);
 
         assertBlockEqual(r0Orig, r0Rest, `k0 evaluation mismatch at x=${x}`);
         assertBlockEqual(r1Orig, r1Rest, `k1 evaluation mismatch at x=${x}`);
@@ -198,20 +198,20 @@ function testKeySerialization(): void {
     console.log("  ✓ testKeySerialization passed");
 }
 
-function testConvenienceFunctions(): void {
+async function testConvenienceFunctions(): Promise<void> {
     const alpha = 12345;
     const n = 16;
 
-    const [k0, k1] = gen(alpha, n);
-    const r0 = evalAt(k0, alpha);
-    const r1 = evalAt(k1, alpha);
+    const [k0, k1] = await gen(alpha, n);
+    const r0 = await evalAt(k0, alpha);
+    const r1 = await evalAt(k1, alpha);
 
     assertBlockNotZero(r0.xor(r1), "Convenience function: XOR at alpha should be non-zero");
     console.log("  ✓ testConvenienceFunctions passed");
 }
 
 // Run all tests
-export function runTests(): void {
+export async function runTests(): Promise<void> {
     console.log("\n=== Block Tests ===");
     testBlockXor();
     testBlockLsb();
@@ -221,15 +221,18 @@ export function runTests(): void {
     testBlockBytesRoundtrip();
 
     console.log("\n=== DPF Tests ===");
-    testGenBasic();
-    testEvalXorProperty();
-    testEvalZeroAtOtherPoints();
-    testEvalFull();
-    testKeySerialization();
-    testConvenienceFunctions();
+    await testGenBasic();
+    await testEvalXorProperty();
+    await testEvalZeroAtOtherPoints();
+    await testEvalFull();
+    await testKeySerialization();
+    await testConvenienceFunctions();
 
     console.log("\n✅ All tests passed!\n");
 }
 
 // Run tests when executed directly
-runTests();
+runTests().catch((err) => {
+    console.error("Test failed:", err);
+    process.exit(1);
+});

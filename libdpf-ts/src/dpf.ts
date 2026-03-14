@@ -3,9 +3,10 @@
  * 
  * Implements the core DPF algorithms from
  * "Function Secret Sharing: Improvements and Extensions" (Boyle et al., CCS'16)
+ * 
+ * Browser compatible - uses Web Crypto API with Node.js fallback.
  */
 
-import * as crypto from 'crypto';
 import { Block } from './block';
 import { Prg } from './aes';
 import { DpfKey } from './key';
@@ -28,6 +29,27 @@ export function defaultKey(): Block {
     return new Block(DEFAULT_KEY_HIGH, DEFAULT_KEY_LOW);
 }
 
+/**
+ * Get random bytes - works in both browser and Node.js
+ * Uses Web Crypto API in browsers, Node.js crypto as fallback
+ */
+function getRandomBytes(size: number): Uint8Array {
+    // Browser: Use Web Crypto API
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+        const bytes = new Uint8Array(size);
+        window.crypto.getRandomValues(bytes);
+        return bytes;
+    }
+    
+    // Node.js fallback
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return require('crypto').randomBytes(size);
+    } catch {
+        throw new Error('No secure random implementation available. Please run in a browser with Web Crypto API or in Node.js.');
+    }
+}
+
 /** DPF context for key generation and evaluation */
 export class Dpf {
     private prg: Prg;
@@ -48,7 +70,7 @@ export class Dpf {
      * @param n - Domain parameter (domain size is 2^n)
      * @returns [k0, k1] - Two DPF keys for parties 0 and 1
      */
-    gen(alpha: number | bigint, n: number): [DpfKey, DpfKey] {
+    async gen(alpha: number | bigint, n: number): Promise<[DpfKey, DpfKey]> {
         const alphaBig = BigInt(alpha);
         const maxlayer = n - 7;
 
@@ -69,9 +91,9 @@ export class Dpf {
             tcw.push([0, 0]);
         }
 
-        // Initialize random seeds for both parties
-        const s0Bytes = crypto.randomBytes(16);
-        const s1Bytes = crypto.randomBytes(16);
+        // Initialize random seeds for both parties (browser compatible)
+        const s0Bytes = getRandomBytes(16);
+        const s1Bytes = getRandomBytes(16);
         s[0][0] = Block.fromBytes(s0Bytes);
         s[0][1] = Block.fromBytes(s1Bytes);
 
@@ -86,8 +108,8 @@ export class Dpf {
         // Iterate through layers
         for (let i = 1; i <= maxlayer; i++) {
             // PRG expand for both parties
-            const [s0L, s0R, t0L, t0R] = this.prg.generate(s[i - 1][0]);
-            const [s1L, s1R, t1L, t1R] = this.prg.generate(s[i - 1][1]);
+            const [s0L, s0R, t0L, t0R] = await this.prg.generate(s[i - 1][0]);
+            const [s1L, s1R, t1L, t1R] = await this.prg.generate(s[i - 1][1]);
 
             // Determine keep/lose based on alpha's bit at this position
             const alphaBit = getBit(alphaBig, n, i);
@@ -153,7 +175,7 @@ export class Dpf {
      * @param x - The point to evaluate at
      * @returns A 128-bit block representing the evaluation result
      */
-    eval(key: DpfKey, x: number | bigint): Block {
+    async eval(key: DpfKey, x: number | bigint): Promise<Block> {
         const xBig = BigInt(x);
         const maxlayer = key.maxLayer();
 
@@ -163,7 +185,7 @@ export class Dpf {
 
         // Traverse the tree
         for (let i = 1; i <= maxlayer; i++) {
-            const [sL, sR, tL, tR] = this.prg.generate(s);
+            const [sL, sR, tL, tR] = await this.prg.generate(s);
 
             // Apply correction if needed
             let sLCorr = sL;
@@ -207,7 +229,7 @@ export class Dpf {
      * @param key - The DPF key
      * @returns An array of 2^(n-7) blocks representing all evaluation results
      */
-    evalFull(key: DpfKey): Block[] {
+    async evalFull(key: DpfKey): Promise<Block[]> {
         const maxlayer = key.maxLayer();
         const maxlayeritem = 1 << maxlayer;
 
@@ -231,7 +253,7 @@ export class Dpf {
         for (let i = 1; i <= maxlayer; i++) {
             const itemnumber = 1 << (i - 1);
             for (let j = 0; j < itemnumber; j++) {
-                const [sL, sR, tL, tR] = this.prg.generate(s[1 - curlayer][j]);
+                const [sL, sR, tL, tR] = await this.prg.generate(s[1 - curlayer][j]);
 
                 // Apply correction if needed
                 let sLCorr = sL;
@@ -277,19 +299,19 @@ export class Dpf {
 }
 
 /** Convenience function to generate DPF keys */
-export function gen(alpha: number | bigint, n: number): [DpfKey, DpfKey] {
+export async function gen(alpha: number | bigint, n: number): Promise<[DpfKey, DpfKey]> {
     const dpf = Dpf.withDefaultKey();
     return dpf.gen(alpha, n);
 }
 
 /** Convenience function to evaluate DPF at a point */
-export function evalAt(key: DpfKey, x: number | bigint): Block {
+export async function evalAt(key: DpfKey, x: number | bigint): Promise<Block> {
     const dpf = Dpf.withDefaultKey();
     return dpf.eval(key, x);
 }
 
 /** Convenience function for full domain evaluation */
-export function evalFull(key: DpfKey): Block[] {
+export async function evalFull(key: DpfKey): Promise<Block[]> {
     const dpf = Dpf.withDefaultKey();
     return dpf.evalFull(key);
 }

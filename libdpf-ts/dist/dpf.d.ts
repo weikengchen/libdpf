@@ -3,6 +3,8 @@
  *
  * Implements the core DPF algorithms from
  * "Function Secret Sharing: Improvements and Extensions" (Boyle et al., CCS'16)
+ *
+ * Browser compatible - uses Web Crypto API with Node.js fallback.
  */
 import { Block } from './block';
 import { DpfKey } from './key';
@@ -25,7 +27,7 @@ export declare class Dpf {
      * @param n - Domain parameter (domain size is 2^n)
      * @returns [k0, k1] - Two DPF keys for parties 0 and 1
      */
-    gen(alpha: number | bigint, n: number): [DpfKey, DpfKey];
+    gen(alpha: number | bigint, n: number): Promise<[DpfKey, DpfKey]>;
     /**
      * Evaluate the DPF at a single point
      *
@@ -33,18 +35,18 @@ export declare class Dpf {
      * @param x - The point to evaluate at
      * @returns A 128-bit block representing the evaluation result
      */
-    eval(key: DpfKey, x: number | bigint): Block;
+    eval(key: DpfKey, x: number | bigint): Promise<Block>;
     /**
      * Evaluate the DPF at all points in the domain
      *
      * @param key - The DPF key
      * @returns An array of 2^(n-7) blocks representing all evaluation results
      */
-    evalFull(key: DpfKey): Block[];
+    evalFull(key: DpfKey): Promise<Block[]>;
 }
 /** Convenience function to generate DPF keys */
-export declare function gen(alpha: number | bigint, n: number): [DpfKey, DpfKey];
+export declare function gen(alpha: number | bigint, n: number): Promise<[DpfKey, DpfKey]>;
 /** Convenience function to evaluate DPF at a point */
-export declare function evalAt(key: DpfKey, x: number | bigint): Block;
+export declare function evalAt(key: DpfKey, x: number | bigint): Promise<Block>;
 /** Convenience function for full domain evaluation */
-export declare function evalFull(key: DpfKey): Block[];
+export declare function evalFull(key: DpfKey): Promise<Block[]>;

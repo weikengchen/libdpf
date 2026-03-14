@@ -11,9 +11,10 @@
 //! - Final 16 bytes: finalblock
 
 use crate::block::Block;
+use serde::{Deserialize, Serialize};
 
 /// A DPF key for evaluation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DpfKey {
     /// Domain parameter (size is 2^n)
     pub n: u8,
@@ -126,6 +127,62 @@ impl DpfKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_serde_json_roundtrip() {
+        let n: u8 = 16;
+        let maxlayer = (n - 7) as usize;
+
+        let key = DpfKey {
+            n,
+            s0: Block::new(12345, 67890),
+            t0: 1,
+            scw: vec![Block::new(111, 222); maxlayer],
+            tcw: vec![[0, 1]; maxlayer],
+            final_block: Block::new(999, 888),
+        };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&key).unwrap();
+        
+        // Deserialize from JSON
+        let restored: DpfKey = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(key.n, restored.n);
+        assert_eq!(key.s0, restored.s0);
+        assert_eq!(key.t0, restored.t0);
+        assert_eq!(key.scw, restored.scw);
+        assert_eq!(key.tcw, restored.tcw);
+        assert_eq!(key.final_block, restored.final_block);
+    }
+
+    #[test]
+    fn test_serde_bincode_roundtrip() {
+        let n: u8 = 16;
+        let maxlayer = (n - 7) as usize;
+
+        let key = DpfKey {
+            n,
+            s0: Block::new(12345, 67890),
+            t0: 1,
+            scw: vec![Block::new(111, 222); maxlayer],
+            tcw: vec![[0, 1]; maxlayer],
+            final_block: Block::new(999, 888),
+        };
+
+        // Serialize to binary (bincode)
+        let binary = bincode::serialize(&key).unwrap();
+        
+        // Deserialize from binary
+        let restored: DpfKey = bincode::deserialize(&binary).unwrap();
+
+        assert_eq!(key.n, restored.n);
+        assert_eq!(key.s0, restored.s0);
+        assert_eq!(key.t0, restored.t0);
+        assert_eq!(key.scw, restored.scw);
+        assert_eq!(key.tcw, restored.tcw);
+        assert_eq!(key.final_block, restored.final_block);
+    }
 
     #[test]
     fn test_key_serialization_roundtrip() {
