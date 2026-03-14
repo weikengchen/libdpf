@@ -2,16 +2,14 @@
  * AES-128 encryption wrapper with browser and Node.js support
  *
  * Provides AES-128 encryption for the DPF PRG construction.
- * Uses Web Crypto API in browsers, Node.js crypto module as fallback.
+ * Uses aes-js for AES-ECB (works in all environments including Safari).
  */
 import { Block } from './block';
 /** AES-128 key wrapper with async encryption */
 export declare class AesKey {
     private keyBytes;
-    private nodeCrypto;
+    private aesEcb;
     constructor(keyBlock: Block);
-    /** Get or create a Web Crypto key for this AES key */
-    private getWebCryptoKey;
     /** Encrypt a single block (returns new block) */
     encryptBlock(block: Block): Promise<Block>;
     /** Encrypt two blocks */

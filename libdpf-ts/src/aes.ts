@@ -2,97 +2,31 @@
  * AES-128 encryption wrapper with browser and Node.js support
  * 
  * Provides AES-128 encryption for the DPF PRG construction.
- * Uses Web Crypto API in browsers, Node.js crypto module as fallback.
+ * Uses aes-js for AES-ECB (works in all environments including Safari).
  */
 
+import aesjs from 'aes-js';
 import { Block } from './block';
-
-/** Detect environment and get crypto implementation */
-function getNodeCrypto(): typeof import('crypto') | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('crypto');
-  } catch {
-    return null;
-  }
-}
-
-/** Check if running in browser with Web Crypto API */
-function hasWebCrypto(): boolean {
-  return typeof window !== 'undefined' && 
-         window.crypto !== undefined && 
-         window.crypto.subtle !== undefined;
-}
-
-/** Convert Uint8Array to ArrayBuffer for Web Crypto API compatibility */
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-/** Cache for imported Web Crypto keys */
-let webCryptoKeyCache: Map<string, CryptoKey> = new Map();
 
 /** AES-128 key wrapper with async encryption */
 export class AesKey {
     private keyBytes: Uint8Array;
-    private nodeCrypto: ReturnType<typeof getNodeCrypto>;
+    private aesEcb: InstanceType<typeof aesjs.ModeOfOperation.ecb>;
 
     constructor(keyBlock: Block) {
         // Create a 128-bit key from the block
         this.keyBytes = keyBlock.toBytes();
-        this.nodeCrypto = getNodeCrypto();
-    }
-
-    /** Get or create a Web Crypto key for this AES key */
-    private async getWebCryptoKey(): Promise<CryptoKey> {
-        const keyHex = Array.from(this.keyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        let cryptoKey = webCryptoKeyCache.get(keyHex);
-        if (cryptoKey) {
-            return cryptoKey;
-        }
-
-        cryptoKey = await window.crypto.subtle.importKey(
-            'raw',
-            toArrayBuffer(this.keyBytes),
-            { name: 'AES-ECB' },
-            false,
-            ['encrypt']
-        );
-        
-        webCryptoKeyCache.set(keyHex, cryptoKey);
-        return cryptoKey;
+        // Initialize AES-ECB mode using aes-js (works in all environments)
+        this.aesEcb = new aesjs.ModeOfOperation.ecb(this.keyBytes);
     }
 
     /** Encrypt a single block (returns new block) */
     async encryptBlock(block: Block): Promise<Block> {
         const bytes = block.toBytes();
         
-        // Browser: Use Web Crypto API
-        if (hasWebCrypto()) {
-            const cryptoKey = await this.getWebCryptoKey();
-            const encrypted = await window.crypto.subtle.encrypt(
-                { name: 'AES-ECB' },
-                cryptoKey,
-                toArrayBuffer(bytes)
-            );
-            return Block.fromBytes(new Uint8Array(encrypted));
-        }
-        
-        // Node.js fallback
-        if (this.nodeCrypto) {
-            const cipher = this.nodeCrypto.createCipheriv('aes-128-ecb', Buffer.from(this.keyBytes), null);
-            cipher.setAutoPadding(false);
-            
-            const encrypted = Buffer.concat([
-                cipher.update(Buffer.from(bytes)),
-                cipher.final()
-            ]);
-            
-            return Block.fromBytes(new Uint8Array(encrypted));
-        }
-        
-        throw new Error('No crypto implementation available. Please run in a browser with Web Crypto API or in Node.js.');
+        // Use aes-js for AES-ECB encryption (works in all environments including Safari)
+        const encrypted = this.aesEcb.encrypt(bytes);
+        return Block.fromBytes(new Uint8Array(encrypted));
     }
 
     /** Encrypt two blocks */
