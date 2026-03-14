@@ -1,6 +1,7 @@
 {
   "name": "libdpf",
   "version": "0.1.0",
+  "type": "module",
   "description": "Distributed Point Function (DPF) library - TypeScript implementation with browser support",
   "main": "dist/index.js",
   "module": "dist/index.js",

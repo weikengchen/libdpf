@@ -11,7 +11,7 @@
  *   - Byte 18*i+17: tCW[i-1][1] (right correction bit)
  * - Final 16 bytes: finalblock
  */
-import { Block } from './block';
+import { Block } from './block.js';
 /** A DPF key for evaluation */
 export declare class DpfKey {
     /** Domain parameter (size is 2^n) */

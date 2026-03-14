@@ -4,7 +4,7 @@
  * Provides AES-128 encryption for the DPF PRG construction.
  * Uses aes-js for AES-ECB (works in all environments including Safari).
  */
-import { Block } from './block';
+import { Block } from './block.js';
 /** AES-128 key wrapper with async encryption */
 export declare class AesKey {
     private keyBytes;

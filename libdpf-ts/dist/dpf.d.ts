@@ -6,9 +6,9 @@
  *
  * Browser compatible - uses Web Crypto API with Node.js fallback.
  */
-import { Block } from './block';
-import { DpfKey } from './key';
-export { DpfKey } from './key';
+import { Block } from './block.js';
+import { DpfKey } from './key.js';
+export { DpfKey } from './key.js';
 /** Default AES key values (from C implementation) */
 export declare const DEFAULT_KEY_HIGH: bigint;
 export declare const DEFAULT_KEY_LOW: bigint;

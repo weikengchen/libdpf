@@ -12,7 +12,7 @@
  * - Final 16 bytes: finalblock
  */
 
-import { Block } from './block';
+import { Block } from './block.js';
 
 /** A DPF key for evaluation */
 export class DpfKey {

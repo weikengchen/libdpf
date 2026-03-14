@@ -7,12 +7,12 @@
  * Browser compatible - uses Web Crypto API with Node.js fallback.
  */
 
-import { Block } from './block';
-import { Prg } from './aes';
-import { DpfKey } from './key';
+import { Block } from './block.js';
+import { Prg } from './aes.js';
+import { DpfKey } from './key.js';
 
 // Re-export DpfKey for convenience
-export { DpfKey } from './key';
+export { DpfKey } from './key.js';
 
 /** Get a specific bit from an integer (bit b from position n) */
 function getBit(x: number | bigint, n: number, b: number): number {
@@ -29,11 +29,36 @@ export function defaultKey(): Block {
     return new Block(DEFAULT_KEY_HIGH, DEFAULT_KEY_LOW);
 }
 
+/** Cached Node.js crypto module */
+let nodeCrypto: typeof import('crypto') | null | undefined = undefined;
+
+/** Get the Node.js crypto module (async for ES module compatibility) */
+async function getNodeCrypto(): Promise<typeof import('crypto') | null> {
+    if (nodeCrypto !== undefined) {
+        return nodeCrypto;
+    }
+    
+    // Check if we're in a browser environment
+    if (typeof window !== 'undefined') {
+        nodeCrypto = null;
+        return null;
+    }
+    
+    // Try to dynamically import Node.js crypto (works in ES modules)
+    try {
+        nodeCrypto = await import('crypto');
+        return nodeCrypto;
+    } catch {
+        nodeCrypto = null;
+        return null;
+    }
+}
+
 /**
  * Get random bytes - works in both browser and Node.js
  * Uses Web Crypto API in browsers, Node.js crypto as fallback
  */
-function getRandomBytes(size: number): Uint8Array {
+async function getRandomBytes(size: number): Promise<Uint8Array> {
     // Browser: Use Web Crypto API
     if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
         const bytes = new Uint8Array(size);
@@ -42,12 +67,12 @@ function getRandomBytes(size: number): Uint8Array {
     }
     
     // Node.js fallback
-    try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        return require('crypto').randomBytes(size);
-    } catch {
-        throw new Error('No secure random implementation available. Please run in a browser with Web Crypto API or in Node.js.');
+    const crypto = await getNodeCrypto();
+    if (crypto) {
+        return crypto.randomBytes(size);
     }
+    
+    throw new Error('No secure random implementation available. Please run in a browser with Web Crypto API or in Node.js.');
 }
 
 /** DPF context for key generation and evaluation */
@@ -92,8 +117,8 @@ export class Dpf {
         }
 
         // Initialize random seeds for both parties (browser compatible)
-        const s0Bytes = getRandomBytes(16);
-        const s1Bytes = getRandomBytes(16);
+        const s0Bytes = await getRandomBytes(16);
+        const s1Bytes = await getRandomBytes(16);
         s[0][0] = Block.fromBytes(s0Bytes);
         s[0][1] = Block.fromBytes(s1Bytes);
 

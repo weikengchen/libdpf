@@ -2,8 +2,8 @@
  * Tests for DPF implementation
  */
 
-import { Block } from '../block';
-import { Dpf, DpfKey, gen, evalAt, evalFull } from '../dpf';
+import { Block } from '../block.js';
+import { Dpf, DpfKey, gen, evalAt, evalFull } from '../dpf.js';
 
 function assertEqual<T>(actual: T, expected: T, message?: string): void {
     if (actual !== expected) {

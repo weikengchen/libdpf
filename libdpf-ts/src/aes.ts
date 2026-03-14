@@ -6,7 +6,7 @@
  */
 
 import aesjs from 'aes-js';
-import { Block } from './block';
+import { Block } from './block.js';
 
 /** AES-128 key wrapper with async encryption */
 export class AesKey {
