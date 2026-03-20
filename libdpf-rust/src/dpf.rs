@@ -218,15 +218,47 @@ impl Dpf {
     /// # Returns
     /// * A vector of 2^(n-7) blocks representing all evaluation results
     pub fn eval_full(&self, key: &DpfKey) -> Vec<Block> {
+        let num_points = 1u64 << key.n;
+        self.eval_partial(key, num_points)
+    }
+
+    /// Evaluate the DPF at the first `num_points` points of the domain (0..num_points)
+    ///
+    /// This is more efficient than eval_full when num_points < 2^n, as it skips
+    /// expanding tree nodes that would only produce results beyond the requested range.
+    /// Both memory and computation scale with num_points rather than the full domain.
+    ///
+    /// # Arguments
+    /// * `key` - The DPF key
+    /// * `num_points` - Number of domain points to evaluate (from 0 to num_points-1)
+    ///
+    /// # Returns
+    /// * A vector of ceil(num_points / 128) blocks representing evaluation results
+    pub fn eval_partial(&self, key: &DpfKey, num_points: u64) -> Vec<Block> {
         let maxlayer = key.max_layer();
-        let maxlayeritem = 1usize << maxlayer;
+        let full_domain_blocks = 1usize << maxlayer;
+
+        // Number of leaf blocks needed: ceil(num_points / 128)
+        let num_blocks = ((num_points as usize) + 127) / 128;
+        let num_blocks = num_blocks.min(full_domain_blocks);
+
+        if num_blocks == 0 {
+            return Vec::new();
+        }
+
+        // Buffer size: at the last layer we may produce one extra right child
+        let buf_size = if num_blocks == full_domain_blocks {
+            full_domain_blocks
+        } else {
+            num_blocks + 1
+        };
 
         // Two layers for ping-pong evaluation
         let mut s = vec![
-            vec![Block::zero(); maxlayeritem],
-            vec![Block::zero(); maxlayeritem],
+            vec![Block::zero(); buf_size],
+            vec![Block::zero(); buf_size],
         ];
-        let mut t = vec![vec![0u8; maxlayeritem]; 2];
+        let mut t = vec![vec![0u8; buf_size]; 2];
 
         // Initialize
         s[0][0] = key.s0;
@@ -234,10 +266,18 @@ impl Dpf {
 
         let mut curlayer: usize = 1;
 
-        // Traverse the tree breadth-first
+        // Traverse the tree breadth-first, only expanding nodes that
+        // contribute to the first num_blocks leaves
         for i in 1..=maxlayer {
-            let itemnumber = 1usize << (i - 1);
-            for j in 0..itemnumber {
+            // Number of parents to expand: ceil(num_blocks / 2^(maxlayer - i + 1))
+            let shift = maxlayer - i + 1;
+            let parents_needed = if num_blocks == full_domain_blocks {
+                1usize << (i - 1)
+            } else {
+                (num_blocks + (1 << shift) - 1) >> shift
+            };
+
+            for j in 0..parents_needed {
                 let (sL, sR, tL, tR) = self.prg.generate(&s[1 - curlayer][j]);
 
                 // Apply correction if needed
@@ -252,20 +292,21 @@ impl Dpf {
                     (sL, sR, tL, tR)
                 };
 
-                // Store results
+                // Store left child
                 s[curlayer][2 * j] = sL_corr;
                 t[curlayer][2 * j] = tL_corr;
+
+                // Store right child (always fits: 2*j+1 < 2*parents_needed <= buf_size)
                 s[curlayer][2 * j + 1] = sR_corr;
                 t[curlayer][2 * j + 1] = tR_corr;
             }
             curlayer = 1 - curlayer;
         }
 
-        // Compute final results
-        let itemnumber = maxlayeritem;
-        let mut res = Vec::with_capacity(itemnumber);
+        // Compute final results for the first num_blocks blocks
+        let mut res = Vec::with_capacity(num_blocks);
 
-        for j in 0..itemnumber {
+        for j in 0..num_blocks {
             let mut block = s[1 - curlayer][j];
 
             if t[1 - curlayer][j] == 1 {
@@ -298,6 +339,12 @@ pub fn eval(key: &DpfKey, x: u64) -> Block {
 pub fn eval_full(key: &DpfKey) -> Vec<Block> {
     let dpf = Dpf::with_default_key();
     dpf.eval_full(key)
+}
+
+/// Convenience function for partial domain evaluation
+pub fn eval_partial(key: &DpfKey, num_points: u64) -> Vec<Block> {
+    let dpf = Dpf::with_default_key();
+    dpf.eval_partial(key, num_points)
 }
 
 #[cfg(test)]
@@ -384,6 +431,123 @@ mod tests {
                 // This block should be zero
                 assert!(xor_result.is_equal(&Block::zero()),
                     "Block {} not containing alpha should be zero", i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_partial_matches_full() {
+        // eval_partial(num_points) should return the first ceil(num_points/128) blocks
+        // identical to eval_full
+        let dpf = Dpf::with_default_key();
+        let alpha: u64 = 26943;
+        let n: u8 = 16;
+
+        let (k0, k1) = dpf.gen(alpha, n);
+
+        let full0 = dpf.eval_full(&k0);
+        let full1 = dpf.eval_full(&k1);
+
+        // Test various partial sizes
+        for num_points in [1u64, 128, 129, 1000, 5000, 26943, 27008, 30000, 65536] {
+            let partial0 = dpf.eval_partial(&k0, num_points);
+            let partial1 = dpf.eval_partial(&k1, num_points);
+
+            let expected_blocks = ((num_points as usize) + 127) / 128;
+            assert_eq!(partial0.len(), expected_blocks,
+                "partial k0 length mismatch for num_points={}", num_points);
+            assert_eq!(partial1.len(), expected_blocks,
+                "partial k1 length mismatch for num_points={}", num_points);
+
+            // Each block must match the corresponding block from eval_full
+            for i in 0..expected_blocks {
+                assert_eq!(partial0[i], full0[i],
+                    "k0 block {} mismatch for num_points={}", i, num_points);
+                assert_eq!(partial1[i], full1[i],
+                    "k1 block {} mismatch for num_points={}", i, num_points);
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_partial_correctness() {
+        // Verify the DPF property holds for partial evaluation:
+        // XOR of both keys is non-zero at alpha's block, zero elsewhere
+        let dpf = Dpf::with_default_key();
+        let alpha: u64 = 500;
+        let n: u8 = 16;
+
+        let (k0, k1) = dpf.gen(alpha, n);
+
+        // Evaluate only the first 1024 points (alpha=500 is within this range)
+        let partial0 = dpf.eval_partial(&k0, 1024);
+        let partial1 = dpf.eval_partial(&k1, 1024);
+
+        assert_eq!(partial0.len(), 8); // 1024 / 128 = 8 blocks
+
+        for (i, (r0, r1)) in partial0.iter().zip(partial1.iter()).enumerate() {
+            let xor_result = r0.xor(r1);
+            let block_start = (i * 128) as u64;
+            let block_end = block_start + 128;
+
+            if alpha >= block_start && alpha < block_end {
+                assert!(!xor_result.is_equal(&Block::zero()),
+                    "Block {} containing alpha should be non-zero", i);
+            } else {
+                assert!(xor_result.is_equal(&Block::zero()),
+                    "Block {} should be zero", i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_partial_edge_cases() {
+        let dpf = Dpf::with_default_key();
+        let (k0, _) = dpf.gen(100, 16);
+
+        // Zero points
+        let res = dpf.eval_partial(&k0, 0);
+        assert_eq!(res.len(), 0);
+
+        // 1 point -> 1 block
+        let res = dpf.eval_partial(&k0, 1);
+        assert_eq!(res.len(), 1);
+
+        // Exactly 128 points -> 1 block
+        let res = dpf.eval_partial(&k0, 128);
+        assert_eq!(res.len(), 1);
+
+        // 129 points -> 2 blocks
+        let res = dpf.eval_partial(&k0, 129);
+        assert_eq!(res.len(), 2);
+
+        // Beyond domain size -> clamped to full domain
+        let res = dpf.eval_partial(&k0, 100000);
+        assert_eq!(res.len(), 1 << (16 - 7));
+    }
+
+    #[test]
+    fn test_eval_partial_different_domain_sizes() {
+        let dpf = Dpf::with_default_key();
+
+        for n in [8u8, 10, 12, 16] {
+            let domain = 1u64 << n;
+            let alpha = domain / 3;
+            let (k0, k1) = dpf.gen(alpha, n);
+
+            // Evaluate half the domain
+            let half = domain / 2;
+            let partial0 = dpf.eval_partial(&k0, half);
+            let partial1 = dpf.eval_partial(&k1, half);
+            let full0 = dpf.eval_full(&k0);
+            let full1 = dpf.eval_full(&k1);
+
+            let expected_blocks = (half as usize) / 128;
+            assert_eq!(partial0.len(), expected_blocks, "n={}", n);
+
+            for i in 0..expected_blocks {
+                assert_eq!(partial0[i], full0[i], "n={} k0 block {}", n, i);
+                assert_eq!(partial1[i], full1[i], "n={} k1 block {}", n, i);
             }
         }
     }

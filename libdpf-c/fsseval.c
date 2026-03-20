@@ -287,6 +287,107 @@ block* EVALFULL(AES_KEY *key, unsigned char* k){
 	return res;
 }
 
+block* EVALPARTIAL(AES_KEY *key, unsigned char* k, int numpoints){
+	int n = k[0];
+	int maxlayer = n - 7;
+	int fulldomain = 1 << (n - 7);
+
+	// Number of leaf blocks needed: ceil(numpoints / 128)
+	int numblocks = (numpoints + 127) / 128;
+	if(numblocks > fulldomain) numblocks = fulldomain;
+
+	if(numblocks == 0) return NULL;
+
+	// If requesting full domain, delegate to EVALFULL
+	if(numblocks == fulldomain){
+		return EVALFULL(key, k);
+	}
+
+	int bufsize = numblocks + 1;
+
+	block *s0 = (block*) calloc(bufsize, sizeof(block));
+	block *s1 = (block*) calloc(bufsize, sizeof(block));
+	int *t0 = (int*) calloc(bufsize, sizeof(int));
+	int *t1 = (int*) calloc(bufsize, sizeof(int));
+
+	int curlayer = 1;
+
+	block sCW[maxlayer];
+	int tCW[maxlayer][2];
+	block finalblock;
+
+	// Use s0/s1 as ping-pong: curlayer=1 means write to s1/t1, read from s0/t0
+	memcpy(&s0[0], &k[1], 16);
+	t0[0] = k[17];
+
+	int i, j;
+	for(i = 1; i <= maxlayer; i++){
+		memcpy(&sCW[i-1], &k[18 * i], 16);
+		tCW[i-1][0] = k[18 * i + 16];
+		tCW[i-1][1] = k[18 * i + 17];
+	}
+
+	memcpy(&finalblock, &k[18 * (maxlayer + 1)], 16);
+
+	block *scur, *sprev;
+	int *tcur, *tprev;
+
+	// Set up initial pointers: layer 0 data is in s0/t0
+	// curlayer=1 means we write to s1/t1, read from s0/t0
+	scur = s1; tcur = t1;
+	sprev = s0; tprev = t0;
+
+	block sL, sR;
+	int tL, tR;
+	for(i = 1; i <= maxlayer; i++){
+		// Number of parents to expand: ceil(numblocks / 2^(maxlayer - i + 1))
+		int shift = maxlayer - i + 1;
+		int parents = (numblocks + (1 << shift) - 1) >> shift;
+
+		for(j = 0; j < parents; j++){
+			PRG(key, sprev[j], &sL, &sR, &tL, &tR);
+
+			if(tprev[j] == 1){
+				sL = dpf_xor(sL, sCW[i-1]);
+				sR = dpf_xor(sR, sCW[i-1]);
+				tL = tL ^ tCW[i-1][0];
+				tR = tR ^ tCW[i-1][1];
+			}
+
+			scur[2 * j] = sL;
+			tcur[2 * j] = tL;
+			scur[2 * j + 1] = sR;
+			tcur[2 * j + 1] = tR;
+		}
+
+		// Swap pointers
+		block *stmp = scur; scur = sprev; sprev = stmp;
+		int *ttmp = tcur; tcur = tprev; tprev = ttmp;
+	}
+
+	// Results are in sprev/tprev (last written layer)
+	block *res = (block*) malloc(sizeof(block) * numblocks);
+
+	for(j = 0; j < numblocks; j++){
+		res[j] = sprev[j];
+
+		if(tprev[j] == 1){
+			res[j] = dpf_reverse_lsb(res[j]);
+		}
+
+		if(tprev[j] == 1){
+			res[j] = dpf_xor(res[j], finalblock);
+		}
+	}
+
+	free(s0);
+	free(s1);
+	free(t0);
+	free(t1);
+
+	return res;
+}
+
 int getsize(int n){
 	int maxlayer = n - 7;
 

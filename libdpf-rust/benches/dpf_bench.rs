@@ -58,6 +58,48 @@ fn bench_eval_full(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_eval_partial(c: &mut Criterion) {
+    let dpf = Dpf::with_default_key();
+
+    let mut group = c.benchmark_group("eval_partial");
+
+    // For n=16 (domain 2^16 = 65536), benchmark partial at various fractions
+    let n: u8 = 16;
+    let alpha = (1u64 << (n - 1)) + 123;
+    let (k0, _) = dpf.gen(alpha, n);
+
+    for num_points in [128u64, 1024, 4096, 16384, 32768, 65536] {
+        group.bench_with_input(
+            BenchmarkId::new("n16", num_points),
+            &num_points,
+            |b, &np| {
+                b.iter(|| {
+                    dpf.eval_partial(black_box(&k0), black_box(np))
+                });
+            },
+        );
+    }
+
+    // For n=20, compare partial vs full
+    let n: u8 = 20;
+    let alpha = (1u64 << (n - 1)) + 123;
+    let (k0, _) = dpf.gen(alpha, n);
+
+    for num_points in [1024u64, 16384, 131072, 524288, 1048576] {
+        group.bench_with_input(
+            BenchmarkId::new("n20", num_points),
+            &num_points,
+            |b, &np| {
+                b.iter(|| {
+                    dpf.eval_partial(black_box(&k0), black_box(np))
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 fn bench_block_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("block_ops");
     
@@ -116,6 +158,7 @@ criterion_group!(
     bench_gen,
     bench_eval,
     bench_eval_full,
+    bench_eval_partial,
     bench_block_operations,
     bench_complete_workflow,
 );

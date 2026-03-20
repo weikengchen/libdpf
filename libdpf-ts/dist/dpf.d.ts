@@ -43,6 +43,17 @@ export declare class Dpf {
      * @returns An array of 2^(n-7) blocks representing all evaluation results
      */
     evalFull(key: DpfKey): Promise<Block[]>;
+    /**
+     * Evaluate the DPF at the first numPoints points of the domain (0..numPoints)
+     *
+     * More efficient than evalFull when numPoints < 2^n, as it skips
+     * expanding tree nodes that would only produce results beyond the requested range.
+     *
+     * @param key - The DPF key
+     * @param numPoints - Number of domain points to evaluate (from 0 to numPoints-1)
+     * @returns An array of ceil(numPoints / 128) blocks representing evaluation results
+     */
+    evalPartial(key: DpfKey, numPoints: number): Promise<Block[]>;
 }
 /** Convenience function to generate DPF keys */
 export declare function gen(alpha: number | bigint, n: number): Promise<[DpfKey, DpfKey]>;
@@ -50,3 +61,5 @@ export declare function gen(alpha: number | bigint, n: number): Promise<[DpfKey,
 export declare function evalAt(key: DpfKey, x: number | bigint): Promise<Block>;
 /** Convenience function for full domain evaluation */
 export declare function evalFull(key: DpfKey): Promise<Block[]>;
+/** Convenience function for partial domain evaluation */
+export declare function evalPartial(key: DpfKey, numPoints: number): Promise<Block[]>;

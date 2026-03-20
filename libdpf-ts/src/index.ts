@@ -8,4 +8,4 @@
 export { Block } from './block.js';
 export { AesKey, Prg } from './aes.js';
 export { DpfKey } from './key.js';
-export { Dpf, gen, evalAt, evalFull, defaultKey, DEFAULT_KEY_HIGH, DEFAULT_KEY_LOW } from './dpf.js';
+export { Dpf, gen, evalAt, evalFull, evalPartial, defaultKey, DEFAULT_KEY_HIGH, DEFAULT_KEY_LOW } from './dpf.js';

@@ -3,7 +3,7 @@
  */
 
 import { Block } from '../block.js';
-import { Dpf, DpfKey, gen, evalAt, evalFull } from '../dpf.js';
+import { Dpf, DpfKey, gen, evalAt, evalFull, evalPartial } from '../dpf.js';
 
 function assertEqual<T>(actual: T, expected: T, message?: string): void {
     if (actual !== expected) {
@@ -198,6 +198,66 @@ async function testKeySerialization(): Promise<void> {
     console.log("  ✓ testKeySerialization passed");
 }
 
+async function testEvalPartialMatchesFull(): Promise<void> {
+    const dpf = Dpf.withDefaultKey();
+    const alpha = 26943;
+    const n = 16;
+
+    const [k0, k1] = await dpf.gen(alpha, n);
+
+    const full0 = await dpf.evalFull(k0);
+    const full1 = await dpf.evalFull(k1);
+
+    // Test various partial sizes
+    for (const numPoints of [128, 1024, 5000, 27008, 65536]) {
+        const partial0 = await dpf.evalPartial(k0, numPoints);
+        const partial1 = await dpf.evalPartial(k1, numPoints);
+
+        const expectedBlocks = Math.ceil(numPoints / 128);
+        assertEqual(partial0.length, expectedBlocks,
+            `partial k0 length mismatch for numPoints=${numPoints}`);
+        assertEqual(partial1.length, expectedBlocks,
+            `partial k1 length mismatch for numPoints=${numPoints}`);
+
+        for (let i = 0; i < expectedBlocks; i++) {
+            assertBlockEqual(partial0[i], full0[i],
+                `k0 block ${i} mismatch for numPoints=${numPoints}`);
+            assertBlockEqual(partial1[i], full1[i],
+                `k1 block ${i} mismatch for numPoints=${numPoints}`);
+        }
+    }
+    console.log("  ✓ testEvalPartialMatchesFull passed");
+}
+
+async function testEvalPartialCorrectness(): Promise<void> {
+    const dpf = Dpf.withDefaultKey();
+    const alpha = 500;
+    const n = 16;
+
+    const [k0, k1] = await dpf.gen(alpha, n);
+
+    // Evaluate only the first 1024 points (alpha=500 is within this range)
+    const partial0 = await dpf.evalPartial(k0, 1024);
+    const partial1 = await dpf.evalPartial(k1, 1024);
+
+    assertEqual(partial0.length, 8, "Expected 8 blocks for 1024 points");
+
+    for (let i = 0; i < partial0.length; i++) {
+        const xorResult = partial0[i].xor(partial1[i]);
+        const blockStart = i * 128;
+        const blockEnd = blockStart + 128;
+
+        if (alpha >= blockStart && alpha < blockEnd) {
+            assertBlockNotZero(xorResult,
+                `Block ${i} containing alpha should be non-zero`);
+        } else {
+            assertBlockZero(xorResult,
+                `Block ${i} should be zero`);
+        }
+    }
+    console.log("  ✓ testEvalPartialCorrectness passed");
+}
+
 async function testConvenienceFunctions(): Promise<void> {
     const alpha = 12345;
     const n = 16;
@@ -226,6 +286,8 @@ export async function runTests(): Promise<void> {
     await testEvalZeroAtOtherPoints();
     await testEvalFull();
     await testKeySerialization();
+    await testEvalPartialMatchesFull();
+    await testEvalPartialCorrectness();
     await testConvenienceFunctions();
 
     console.log("\n✅ All tests passed!\n");

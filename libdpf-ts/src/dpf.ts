@@ -250,22 +250,48 @@ export class Dpf {
 
     /**
      * Evaluate the DPF at all points in the domain
-     * 
+     *
      * @param key - The DPF key
      * @returns An array of 2^(n-7) blocks representing all evaluation results
      */
     async evalFull(key: DpfKey): Promise<Block[]> {
+        const numPoints = 1 << key.n;
+        return this.evalPartial(key, numPoints);
+    }
+
+    /**
+     * Evaluate the DPF at the first numPoints points of the domain (0..numPoints)
+     *
+     * More efficient than evalFull when numPoints < 2^n, as it skips
+     * expanding tree nodes that would only produce results beyond the requested range.
+     *
+     * @param key - The DPF key
+     * @param numPoints - Number of domain points to evaluate (from 0 to numPoints-1)
+     * @returns An array of ceil(numPoints / 128) blocks representing evaluation results
+     */
+    async evalPartial(key: DpfKey, numPoints: number): Promise<Block[]> {
         const maxlayer = key.maxLayer();
-        const maxlayeritem = 1 << maxlayer;
+        const fullDomainBlocks = 1 << maxlayer;
+
+        // Number of leaf blocks needed: ceil(numPoints / 128)
+        let numBlocks = Math.ceil(numPoints / 128);
+        numBlocks = Math.min(numBlocks, fullDomainBlocks);
+
+        if (numBlocks === 0) {
+            return [];
+        }
+
+        // Buffer size: at the last layer we may produce one extra right child
+        const bufSize = numBlocks === fullDomainBlocks ? fullDomainBlocks : numBlocks + 1;
 
         // Two layers for ping-pong evaluation
         const s: Block[][] = [
-            new Array(maxlayeritem).fill(null).map(() => Block.zero()),
-            new Array(maxlayeritem).fill(null).map(() => Block.zero())
+            new Array(bufSize).fill(null).map(() => Block.zero()),
+            new Array(bufSize).fill(null).map(() => Block.zero())
         ];
         const t: number[][] = [
-            new Array(maxlayeritem).fill(0),
-            new Array(maxlayeritem).fill(0)
+            new Array(bufSize).fill(0),
+            new Array(bufSize).fill(0)
         ];
 
         // Initialize
@@ -274,10 +300,16 @@ export class Dpf {
 
         let curlayer = 1;
 
-        // Traverse the tree breadth-first
+        // Traverse the tree breadth-first, only expanding nodes that
+        // contribute to the first numBlocks leaves
         for (let i = 1; i <= maxlayer; i++) {
-            const itemnumber = 1 << (i - 1);
-            for (let j = 0; j < itemnumber; j++) {
+            // Number of parents to expand: ceil(numBlocks / 2^(maxlayer - i + 1))
+            const shift = maxlayer - i + 1;
+            const parentsNeeded = numBlocks === fullDomainBlocks
+                ? (1 << (i - 1))
+                : Math.ceil(numBlocks / (1 << shift));
+
+            for (let j = 0; j < parentsNeeded; j++) {
                 const [sL, sR, tL, tR] = await this.prg.generate(s[1 - curlayer][j]);
 
                 // Apply correction if needed
@@ -293,20 +325,21 @@ export class Dpf {
                     tRCorr = tR ^ key.tcw[i - 1][1];
                 }
 
-                // Store results
+                // Store left child
                 s[curlayer][2 * j] = sLCorr;
                 t[curlayer][2 * j] = tLCorr;
+
+                // Store right child
                 s[curlayer][2 * j + 1] = sRCorr;
                 t[curlayer][2 * j + 1] = tRCorr;
             }
             curlayer = 1 - curlayer;
         }
 
-        // Compute final results
-        const itemnumber = maxlayeritem;
+        // Compute final results for the first numBlocks blocks
         const res: Block[] = [];
 
-        for (let j = 0; j < itemnumber; j++) {
+        for (let j = 0; j < numBlocks; j++) {
             let block = s[1 - curlayer][j];
 
             if (t[1 - curlayer][j] === 1) {
@@ -339,4 +372,10 @@ export async function evalAt(key: DpfKey, x: number | bigint): Promise<Block> {
 export async function evalFull(key: DpfKey): Promise<Block[]> {
     const dpf = Dpf.withDefaultKey();
     return dpf.evalFull(key);
+}
+
+/** Convenience function for partial domain evaluation */
+export async function evalPartial(key: DpfKey, numPoints: number): Promise<Block[]> {
+    const dpf = Dpf.withDefaultKey();
+    return dpf.evalPartial(key, numPoints);
 }
