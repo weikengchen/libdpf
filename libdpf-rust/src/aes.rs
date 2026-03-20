@@ -65,10 +65,10 @@ impl Prg {
     }
 
     /// Generate pseudorandom outputs from a seed block
-    /// 
+    ///
     /// # Arguments
     /// * `input` - The seed block (LSB will be zeroed before use)
-    /// 
+    ///
     /// # Returns
     /// * `(output1, output2, bit1, bit2)` - Two output blocks and two control bits
     #[inline]
@@ -95,6 +95,58 @@ impl Prg {
         let output2 = stash1.set_lsb_zero();
 
         (output1, output2, bit1, bit2)
+    }
+
+    /// Batch generate pseudorandom outputs from multiple seed blocks.
+    ///
+    /// More efficient than calling `generate()` in a loop because
+    /// `Aes128::encrypt_blocks` pipelines ~8 blocks simultaneously via AES-NI,
+    /// giving up to ~4-8x throughput on the encryption step.
+    ///
+    /// `out_s` must have length `2 * inputs.len()` (left at `2*j`, right at `2*j+1`).
+    /// `out_t` must have length `2 * inputs.len()`.
+    /// `scratch` is a reusable Vec to avoid repeated allocation across calls.
+    pub(crate) fn generate_batch(
+        &self,
+        inputs: &[Block],
+        out_s: &mut [Block],
+        out_t: &mut [u8],
+        scratch: &mut Vec<aes::cipher::Block<Aes128>>,
+    ) {
+        let n = inputs.len();
+        if n == 0 {
+            return;
+        }
+
+        // Prepare 2*n AES cipher blocks: [stash0_0, stash1_0, stash0_1, stash1_1, ...]
+        scratch.clear();
+        scratch.reserve(2 * n);
+        for input in inputs {
+            let zeroed = input.set_lsb_zero();
+            let bytes0 = zeroed.to_bytes();
+            let bytes1 = zeroed.reverse_lsb().to_bytes();
+            scratch.push(*aes::cipher::Block::<Aes128>::from_slice(&bytes0));
+            scratch.push(*aes::cipher::Block::<Aes128>::from_slice(&bytes1));
+        }
+
+        // Batch encrypt — AES-NI processes 8 blocks in parallel per pipeline fill
+        self.key.key.encrypt_blocks(scratch);
+
+        // Post-process: XOR with zeroed input, extract bits, write outputs
+        for i in 0..n {
+            let zeroed = inputs[i].set_lsb_zero();
+
+            let enc0_bytes: [u8; 16] = scratch[2 * i].as_slice().try_into().unwrap();
+            let enc1_bytes: [u8; 16] = scratch[2 * i + 1].as_slice().try_into().unwrap();
+
+            let stash0 = Block::from_bytes(&enc0_bytes).xor(&zeroed);
+            let stash1 = Block::from_bytes(&enc1_bytes).xor(&zeroed).reverse_lsb();
+
+            out_s[2 * i] = stash0.set_lsb_zero();
+            out_s[2 * i + 1] = stash1.set_lsb_zero();
+            out_t[2 * i] = stash0.lsb();
+            out_t[2 * i + 1] = stash1.lsb();
+        }
     }
 }
 

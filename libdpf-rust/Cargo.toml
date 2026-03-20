@@ -11,6 +11,7 @@ categories = ["cryptography", "algorithms"]
 aes = "0.8"
 cipher = "0.4"
 rand = "0.8"
+rayon = "1.10"
 serde = { version = "1.0", features = ["derive"] }
 zeroize = { version = "1.8", features = ["derive"] }
 

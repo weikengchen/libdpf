@@ -4,10 +4,16 @@
 //! "Function Secret Sharing: Improvements and Extensions" (Boyle et al., CCS'16)
 
 use rand::RngCore;
+use rayon::prelude::*;
 
 use crate::aes::Prg;
 use crate::block::Block;
 use crate::key::DpfKey;
+
+/// Minimum parents to use batch PRG (AES pipelining)
+const BATCH_THRESHOLD: usize = 8;
+/// Minimum parents to use rayon thread parallelism
+const PARALLEL_THRESHOLD: usize = 512;
 
 /// Get a specific bit from an integer (bit b from position n)
 /// In C: ((unsigned int)(x) >> (n - b)) & 1
@@ -228,6 +234,13 @@ impl Dpf {
     /// expanding tree nodes that would only produce results beyond the requested range.
     /// Both memory and computation scale with num_points rather than the full domain.
     ///
+    /// Uses two levels of parallelism:
+    /// - **AES batching**: All PRG operations in a layer are batched into a single
+    ///   `encrypt_blocks` call, enabling AES-NI to pipeline ~8 blocks at once (~4-8x
+    ///   throughput on the encryption step).
+    /// - **Thread parallelism**: For layers with ≥512 parents, the work is split
+    ///   across threads using rayon. Each thread batch-encrypts its chunk independently.
+    ///
     /// # Arguments
     /// * `key` - The DPF key
     /// * `num_points` - Number of domain points to evaluate (from 0 to num_points-1)
@@ -253,23 +266,24 @@ impl Dpf {
             num_blocks + 1
         };
 
-        // Two layers for ping-pong evaluation
-        let mut s = vec![
-            vec![Block::zero(); buf_size],
-            vec![Block::zero(); buf_size],
-        ];
-        let mut t = vec![vec![0u8; buf_size]; 2];
+        // Separate ping-pong buffers (not nested Vec) so the borrow checker
+        // allows &read_buf and &mut write_buf simultaneously for rayon
+        let mut s_a = vec![Block::zero(); buf_size];
+        let mut s_b = vec![Block::zero(); buf_size];
+        let mut t_a = vec![0u8; buf_size];
+        let mut t_b = vec![0u8; buf_size];
 
-        // Initialize
-        s[0][0] = key.s0;
-        t[0][0] = key.t0;
+        s_a[0] = key.s0;
+        t_a[0] = key.t0;
 
-        let mut curlayer: usize = 1;
+        // Pre-allocate AES scratch buffer — reused across layers to avoid per-layer allocation
+        let max_parents_per_layer = (num_blocks + 1) / 2;
+        let mut aes_scratch: Vec<aes::cipher::Block<aes::Aes128>> =
+            Vec::with_capacity(2 * max_parents_per_layer);
 
         // Traverse the tree breadth-first, only expanding nodes that
         // contribute to the first num_blocks leaves
         for i in 1..=maxlayer {
-            // Number of parents to expand: ceil(num_blocks / 2^(maxlayer - i + 1))
             let shift = maxlayer - i + 1;
             let parents_needed = if num_blocks == full_domain_blocks {
                 1usize << (i - 1)
@@ -277,49 +291,126 @@ impl Dpf {
                 (num_blocks + (1 << shift) - 1) >> shift
             };
 
-            for j in 0..parents_needed {
-                let (sL, sR, tL, tR) = self.prg.generate(&s[1 - curlayer][j]);
+            // Odd layers: read A, write B. Even layers: read B, write A.
+            let (s_prev, s_cur, t_prev, t_cur) = if i % 2 == 1 {
+                (&s_a[..], &mut s_b[..], &t_a[..], &mut t_b[..])
+            } else {
+                (&s_b[..], &mut s_a[..], &t_b[..], &mut t_a[..])
+            };
 
-                // Apply correction if needed
-                let (sL_corr, sR_corr, tL_corr, tR_corr) = if t[1 - curlayer][j] == 1 {
-                    (
-                        sL.xor(&key.scw[i - 1]),
-                        sR.xor(&key.scw[i - 1]),
-                        tL ^ key.tcw[i - 1][0],
-                        tR ^ key.tcw[i - 1][1],
-                    )
-                } else {
-                    (sL, sR, tL, tR)
-                };
+            let scw_i = &key.scw[i - 1];
+            let tcw_i = &key.tcw[i - 1];
 
-                // Store left child
-                s[curlayer][2 * j] = sL_corr;
-                t[curlayer][2 * j] = tL_corr;
+            if parents_needed >= PARALLEL_THRESHOLD {
+                // ── Rayon parallel path ──
+                // Each thread gets a chunk of parents, does batch PRG + corrections.
+                // Each thread allocates its own small scratch buffer.
+                let chunk_size: usize = 256;
+                let children_out = &mut s_cur[..2 * parents_needed];
+                let tbits_out = &mut t_cur[..2 * parents_needed];
 
-                // Store right child (always fits: 2*j+1 < 2*parents_needed <= buf_size)
-                s[curlayer][2 * j + 1] = sR_corr;
-                t[curlayer][2 * j + 1] = tR_corr;
+                children_out
+                    .par_chunks_mut(2 * chunk_size)
+                    .zip(tbits_out.par_chunks_mut(2 * chunk_size))
+                    .enumerate()
+                    .for_each(|(chunk_idx, (s_chunk, t_chunk))| {
+                        let start = chunk_idx * chunk_size;
+                        let chunk_parents = s_chunk.len() / 2;
+                        let parent_slice = &s_prev[start..start + chunk_parents];
+
+                        // Each thread gets its own scratch (allocated once per thread)
+                        let mut local_scratch = Vec::with_capacity(2 * chunk_parents);
+
+                        self.prg.generate_batch(
+                            parent_slice,
+                            s_chunk,
+                            t_chunk,
+                            &mut local_scratch,
+                        );
+
+                        // Apply corrections in-place
+                        for j in 0..chunk_parents {
+                            if t_prev[start + j] == 1 {
+                                s_chunk[2 * j] = s_chunk[2 * j].xor(scw_i);
+                                s_chunk[2 * j + 1] = s_chunk[2 * j + 1].xor(scw_i);
+                                t_chunk[2 * j] ^= tcw_i[0];
+                                t_chunk[2 * j + 1] ^= tcw_i[1];
+                            }
+                        }
+                    });
+            } else if parents_needed >= BATCH_THRESHOLD {
+                // ── Sequential batch PRG path ──
+                // One encrypt_blocks call for the whole layer → AES pipelining.
+                // Reuses pre-allocated scratch buffer.
+                self.prg.generate_batch(
+                    &s_prev[..parents_needed],
+                    &mut s_cur[..2 * parents_needed],
+                    &mut t_cur[..2 * parents_needed],
+                    &mut aes_scratch,
+                );
+
+                // Apply corrections
+                for j in 0..parents_needed {
+                    if t_prev[j] == 1 {
+                        s_cur[2 * j] = s_cur[2 * j].xor(scw_i);
+                        s_cur[2 * j + 1] = s_cur[2 * j + 1].xor(scw_i);
+                        t_cur[2 * j] ^= tcw_i[0];
+                        t_cur[2 * j + 1] ^= tcw_i[1];
+                    }
+                }
+            } else {
+                // ── Sequential per-element path ──
+                // For very small parent counts, no allocation overhead
+                for j in 0..parents_needed {
+                    let (sl, sr, tl, tr) = self.prg.generate(&s_prev[j]);
+
+                    if t_prev[j] == 1 {
+                        s_cur[2 * j] = sl.xor(scw_i);
+                        s_cur[2 * j + 1] = sr.xor(scw_i);
+                        t_cur[2 * j] = tl ^ tcw_i[0];
+                        t_cur[2 * j + 1] = tr ^ tcw_i[1];
+                    } else {
+                        s_cur[2 * j] = sl;
+                        s_cur[2 * j + 1] = sr;
+                        t_cur[2 * j] = tl;
+                        t_cur[2 * j + 1] = tr;
+                    }
+                }
             }
-            curlayer = 1 - curlayer;
         }
 
-        // Compute final results for the first num_blocks blocks
-        let mut res = Vec::with_capacity(num_blocks);
+        // Results are in the last-written buffer
+        let (final_s, final_t) = if maxlayer % 2 == 1 {
+            (&s_b, &t_b)
+        } else {
+            (&s_a, &t_a)
+        };
 
-        for j in 0..num_blocks {
-            let mut block = s[1 - curlayer][j];
-
-            if t[1 - curlayer][j] == 1 {
-                block = block.reverse_lsb();
+        // Compute final corrections
+        if num_blocks >= PARALLEL_THRESHOLD {
+            (0..num_blocks)
+                .into_par_iter()
+                .map(|j| {
+                    let mut block = final_s[j];
+                    if final_t[j] == 1 {
+                        block = block.reverse_lsb();
+                        block = block.xor(&key.final_block);
+                    }
+                    block
+                })
+                .collect()
+        } else {
+            let mut res = Vec::with_capacity(num_blocks);
+            for j in 0..num_blocks {
+                let mut block = final_s[j];
+                if final_t[j] == 1 {
+                    block = block.reverse_lsb();
+                    block = block.xor(&key.final_block);
+                }
+                res.push(block);
             }
-            if t[1 - curlayer][j] == 1 {
-                block = block.xor(&key.final_block);
-            }
-
-            res.push(block);
+            res
         }
-
-        res
     }
 }
 
@@ -548,6 +639,65 @@ mod tests {
             for i in 0..expected_blocks {
                 assert_eq!(partial0[i], full0[i], "n={} k0 block {}", n, i);
                 assert_eq!(partial1[i], full1[i], "n={} k1 block {}", n, i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_partial_all_code_paths() {
+        // Use n=24 so that larger layers hit the batch and parallel thresholds:
+        // maxlayer = 24-7 = 17, so the largest layer has 2^16 = 65536 parents
+        // which exercises: per-element (<8), batch (8-511), and rayon (>=512)
+        let dpf = Dpf::with_default_key();
+        let n: u8 = 24;
+        let alpha: u64 = 1_000_000;
+        let (k0, k1) = dpf.gen(alpha, n);
+
+        // Evaluate enough points to include alpha
+        let num_points = 1_100_000u64;
+        let partial0 = dpf.eval_partial(&k0, num_points);
+        let partial1 = dpf.eval_partial(&k1, num_points);
+
+        let expected_blocks = ((num_points as usize) + 127) / 128;
+        assert_eq!(partial0.len(), expected_blocks);
+
+        // Verify DPF property: XOR is non-zero at alpha's block, zero elsewhere
+        let alpha_block = (alpha / 128) as usize;
+        let xor_at_alpha = partial0[alpha_block].xor(&partial1[alpha_block]);
+        assert!(!xor_at_alpha.is_equal(&Block::zero()),
+            "XOR at alpha's block should be non-zero");
+
+        // Spot-check some zero blocks
+        for blk in [0usize, 100, 1000, 5000] {
+            if blk != alpha_block {
+                let xor = partial0[blk].xor(&partial1[blk]);
+                assert!(xor.is_equal(&Block::zero()),
+                    "Block {} should be zero", blk);
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_full_large_domain() {
+        // Test full eval at n=20 which exercises all three code paths
+        let dpf = Dpf::with_default_key();
+        let n: u8 = 20;
+        let alpha: u64 = 500_000;
+        let (k0, k1) = dpf.gen(alpha, n);
+
+        let full0 = dpf.eval_full(&k0);
+        let full1 = dpf.eval_full(&k1);
+
+        let alpha_block = (alpha / 128) as usize;
+        let xor_at_alpha = full0[alpha_block].xor(&full1[alpha_block]);
+        assert!(!xor_at_alpha.is_equal(&Block::zero()));
+
+        // Verify a sampling of zero blocks
+        for blk in [0usize, 1000, 3000, 8000] {
+            if blk != alpha_block {
+                let xor = full0[blk].xor(&full1[blk]);
+                assert!(xor.is_equal(&Block::zero()),
+                    "Block {} should be zero at n={}", blk, n);
             }
         }
     }
